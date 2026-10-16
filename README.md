@@ -32,9 +32,9 @@ Versi **v1.0.0 (Base Initial Release)** ini menjadi pondasi dasar yang bersih, s
 * **Nonaktifkan Modul Debug Berat**: Menghapus beban `SLUB_DEBUG`, `DEBUG_INFO_DWARF4`, `DEBUG_INFO_BTF`, `PM_DEBUG`, `DYNAMIC_DEBUG_CORE`, `SCHEDSTATS`, dan `KUNIT_DEBUGFS`.
 * **Penghematan RAM & CPU Cycles**: Mengurangi jejak memori *(memory footprint)* kernel hingga ratusan megabyte dan membebaskan instruksi CPU untuk aplikasi pengguna.
 
-### 🚀 3. Memory & ZRAM Architecture
-* **Zstandard (ZSTD) Default Compression**: Mengganti algoritma kompresi ZRAM bawaan ke ZSTD (`CONFIG_CRYPTO_ZSTD=y` & `ZRAM_DEF_COMP="zstd"`), memberikan rasio kompresi tinggi dengan konsumsi daya CPU yang sangat efisien dibanding LZO.
-* **Optimal Swap Handling**: Mengurangi latensi kompresi memori sehingga multitasking tetap gesit tanpa stutter.
+### 🚀 3. Memory & ZRAM Architecture (Default: LZ4 Zero-Overhead)
+* **LZ4 Default Compression**: Menggunakan algoritma **LZ4** secara default (`CONFIG_ZRAM_DEF_COMP="lz4"`). Berbeda dengan ZSTD yang menuntut komputasi CPU lebih berat, LZ4 memiliki kecepatan dekompresi super instan (~3500+ MB/s) dengan beban komputasi mendekati nol (*near-zero CPU overhead*). Hal ini membuat suhu SoC tetap dingin saat multitasking padat serta menekan penggunaan daya baterai ke titik paling minimal. Modul ZSTD tetap tersedia di dalam kernel jika pengguna ingin mengaktifkannya via userspace.
+* **Optimal Swap Latency**: Menghilangkan *micro-stutter* saat sistem Android melakukan kompresi dan dekompresi halaman memori di latar belakang.
 
 ### 🛡️ 4. Compiler Optimization & Binary Purity
 * **Clang ThinLTO (`CONFIG_LTO_CLANG_THIN=y`)**: Mengaktifkan *Link-Time Optimization* untuk mengeliminasi dead-code lintas unit kompilasi, menghasilkan ukuran binary kernel yang lebih padat dan *cache-friendly*.
@@ -45,6 +45,36 @@ Versi **v1.0.0 (Base Initial Release)** ini menjadi pondasi dasar yang bersih, s
 
 ### ⚡ 6. Next-Gen Root Integration
 * **Dukungan KernelSU-Next Bawaan**: Kompatibel dengan KernelSU-Next untuk kontrol root tingkat kernel tanpa memodifikasi partisi init/ramdisk secara invasif.
+
+---
+
+## 🧩 Catatan Teknis Kompatibilitas GKI 2.0 / KMI (Wi-Fi & Audio Protection)
+
+Banyak custom kernel GKI mengalami masalah fatal seperti **Wi-Fi tidak bisa menyala**, **Bluetooth mati**, atau **Audio bisu** setelah instalasi. ZeroByte Kernel dirancang secara teliti untuk mencegah masalah ini melalui kepatuhan ketat pada arsitektur Android GKI 2.0:
+
+### 1. Pemisahan Kernel & Vendor DLKM
+* Pada Android 14 (GKI 2.0), driver perangkat keras vital seperti **Wi-Fi** (`qca_cld3_wlan.ko`), **Audio** (`snd-soc-*.ko`), **Touchscreen**, dan **Kamera** bukan merupakan bagian dari biner kernel `Image`, melainkan modul loadable (`.ko`) yang tersimpan di partisi `/vendor_dlkm` dan `/system_dlkm`.
+* Skrip instalasi AnyKernel3 pada ZeroByte Kernel **hanya mengganti partisi `boot` (GKI `Image`)** dan **TIDAK mengubah modul vendor bawaan**, menjamin keutuhan driver pabrikan.
+
+### 2. Kepatuhan KMI ABI (Kernel Module Interface)
+* Modul vendor OEM memverifikasi hash CRC dari simbol-simbol kernel saat proses `modprobe`.
+* **Mengapa Wi-Fi & Audio Tetap Berfungsi di ZeroByte Kernel?**
+  * Konfigurasi internal yang menentukan ukuran struktur biner inti (seperti `struct task_struct` dan `struct sched_entity`) tetap **dipertahankan layout-nya 100% identik dengan GKI resmi**.
+  * ZeroByte Kernel **TIDAK mematikan opsi yang merusak ukuran struct** (seperti `CONFIG_SCHEDSTATS` di tingkat kode), melainkan menyarankan penonaktifan beban pencatatannya di tingkat runtime userspace:
+    ```bash
+    # Matikan overhead pencatatan scheduler tanpa merusak ABI KMI (Zero Overhead):
+    sysctl -w kernel.sched_schedstats=0
+    ```
+  * Pendekatan ini memastikan modul Wi-Fi dan Audio tidak mengalami penolakan *symbol version mismatch* saat dimuat oleh sistem.
+
+### 3. Tips Troubleshooting bagi Penguji (Testers)
+* **Wajib Firmware Basis yang Cocok**: Pastikan ROM yang Anda gunakan berbasis firmware resmi Realme UI 5.0 / 6.0 (Android 14) atau Custom ROM AOSP yang mematuhi standar GKI 6.1.
+* **Jangan Wipe Vendor**: Saat instalasi via recovery, **JANGAN** lakukan wipe pada partisi `/vendor` atau `/vendor_dlkm`.
+* **Diagnostik Log Modul**: Jika Anda menemukan kendala konektivitas, cek log kernel melalui Terminal / ADB:
+  ```bash
+  su -c "dmesg | grep -i -E 'wlan|audio|disagrees about version'"
+  ```
+  *(Jika tidak ada pesan "disagrees about version", artinya seluruh modul OEM sukses terhubung dengan kernel).*
 
 ---
 

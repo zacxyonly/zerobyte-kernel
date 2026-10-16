@@ -78,12 +78,13 @@ jobs:
           echo "==> Menerapkan modifikasi konfigurasi hemat daya pada $DEFCONFIG..."
 
           # 1. Matikan Debugging Bloat & Tracing yang memboroskan RAM & CPU
+          # Catatan KMI: Simbol struct (seperti SCHEDSTATS) tetap dipertahankan agar layout struct
+          # task_struct tidak berubah, mencegah symbol CRC mismatch pada modul Wi-Fi/Audio bawaan OEM.
           scripts/config --file $DEFCONFIG --disable DEBUG_INFO_DWARF4
           scripts/config --file $DEFCONFIG --disable DEBUG_INFO_BTF
           scripts/config --file $DEFCONFIG --disable PM_DEBUG
           scripts/config --file $DEFCONFIG --disable PM_ADVANCED_DEBUG
           scripts/config --file $DEFCONFIG --disable DYNAMIC_DEBUG_CORE
-          scripts/config --file $DEFCONFIG --disable SCHEDSTATS
           scripts/config --file $DEFCONFIG --disable KUNIT_DEBUGFS
           scripts/config --file $DEFCONFIG --disable DEBUG_MEMORY_INIT
           scripts/config --file $DEFCONFIG --disable SLUB_DEBUG
@@ -96,10 +97,10 @@ jobs:
           scripts/config --file $DEFCONFIG --enable CPU_IDLE_GOV_MENU
           scripts/config --file $DEFCONFIG --enable CPU_FREQ_GOV_SCHEDUTIL
 
-          # 3. Memory & ZRAM Optimization (Kompresi ZSTD / LZ4)
-          scripts/config --file $DEFCONFIG --enable CRYPTO_ZSTD
+          # 3. Memory & ZRAM Optimization (Default LZ4: Zero-Overhead, Suhu Lebih Dingin & Hemat Baterai)
           scripts/config --file $DEFCONFIG --enable CRYPTO_LZ4
-          scripts/config --file $DEFCONFIG --set-str ZRAM_DEF_COMP "zstd"
+          scripts/config --file $DEFCONFIG --enable CRYPTO_ZSTD
+          scripts/config --file $DEFCONFIG --set-str ZRAM_DEF_COMP "lz4"
 
           # 4. Jaringan Cepat & Rendah Latensi (TCP BBR)
           scripts/config --file $DEFCONFIG --enable TCP_CONG_BBR
