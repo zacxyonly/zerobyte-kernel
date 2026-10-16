@@ -53,8 +53,10 @@ jobs:
         run: |
           echo "Mengunduh AOSP Clang r487747c (Android 14 GKI reference)..."
           mkdir -p clang-aosp
-          curl -s https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz | tar -xz -C clang-aosp
+          curl -sSL "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-release/clang-r487747c.tar.gz" | tar -xz -C clang-aosp
           echo "$GITHUB_WORKSPACE/clang-aosp/bin" >> $GITHUB_PATH
+          echo "Verifikasi Clang:"
+          "$GITHUB_WORKSPACE/clang-aosp/bin/clang" --version
 
       - name: Clone Realme SM6650 Common Kernel
         run: |
