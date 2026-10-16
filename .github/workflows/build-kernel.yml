@@ -24,6 +24,8 @@ on:
 jobs:
   build-kernel:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     steps:
       - name: Free Disk Space (Kosongkan Ruang Disk Runner)
         uses: jlumbroso/free-disk-space@main
@@ -175,12 +177,55 @@ jobs:
           path: ${{ env.ZIP_PATH }}
           retention-days: 14
 
-      - name: Create GitHub Release (Opsional saat push tag)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
+      - name: Generate Checksum & Release Notes
+        run: |
+          ZIP_SHA256=$(sha256sum "${ZIP_PATH}" | awk '{print $1}')
+          echo "ZIP_SHA256=${ZIP_SHA256}" >> $GITHUB_ENV
+          echo "RELEASE_TAG=v1.0.0-${BUILD_DATE}" >> $GITHUB_ENV
+
+          cat << 'EOF' > release_notes.md
+          ## ⚡ ZeroByte Kernel - Release Build
+          *High-Efficiency, Lightweight & Battery-Oriented Custom Kernel for Snapdragon 6 Gen 4 (SM6650)*
+
+          ---
+
+          ### 📋 Catatan Perubahan & Fitur (Changelog):
+          - 🚀 **ZRAM Compression**: Default diatur ke **LZ4** untuk *zero-overhead* CPU, kecepatan dekompresi instan, dan suhu tetap dingin saat multitasking intensif.
+          - 🛡️ **KMI / GKI 2.0 ABI Protection**: Mempertahankan struktur biner kernel (KMI) 100% identik dengan standar GKI resmi agar modul hardware OEM (**Wi-Fi** `qca_cld3_wlan.ko` dan **Audio** `snd-soc-*.ko`) berfungsi normal tanpa kendala symbol mismatch.
+          - 🧹 **Overhead Debugging Stripped**: Menghapus beban logging dan modul debug berat (`SLUB_DEBUG`, `DEBUG_INFO_BTF`, `DYNAMIC_DEBUG_CORE`, `PM_DEBUG`, `DEBUG_MEMORY_INIT`).
+          - 🔋 **Power Management**: Deep sleep optimal via `CONFIG_NO_HZ_IDLE=y` dan `schedutil` governor.
+          - ⚡ **Compiler Optimization**: Dikompilasi menggunakan AOSP Clang Reference Toolchain (`r487747c`) dengan ThinLTO untuk eksekusi kode yang padat dan efisien.
+          - 🌐 **Network Latency**: Mengaktifkan TCP BBR congestion control untuk transmisi data yang hemat daya dan stabil.
+          - 🔑 **Root Ready**: Terintegrasi KernelSU-Next bawaan.
+
+          ---
+
+          ### 📱 Informasi Paket & Checksum:
+          - **Target Device**: Realme P3 5G / Realme 14 Series (RMX5070)
+          - **Chipset**: Qualcomm Snapdragon 6 Gen 4 (SM6650)
+          - **Kernel Version**: Linux 6.1.y GKI 2.0 (Android 14 / 15)
+          - **Installer**: AnyKernel3 Flashable ZIP
+          - **File**: `${ZIP_NAME}`
+          - **SHA256**: `${ZIP_SHA256}`
+
+          ---
+
+          ### 📥 Panduan Pemasangan:
+          1. Masuk ke Custom Recovery (TWRP / OrangeFox) atau buka KernelSU Manager.
+          2. Flash file zip ini ke partisi `boot`.
+          3. Reboot System (Wipe cache/dalvik bersifat opsional).
+          EOF
+
+          sed -i "s/\${ZIP_NAME}/${ZIP_NAME}/g" release_notes.md
+          sed -i "s/\${ZIP_SHA256}/${ZIP_SHA256}/g" release_notes.md
+
+      - name: Publish Auto GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.KERNEL_NAME }} - ${{ env.BUILD_DATE }}
+          body_path: release_notes.md
           files: ${{ env.ZIP_PATH }}
-          name: Release ${{ env.KERNEL_NAME }} (${{ env.BUILD_DATE }})
           draft: false
           prerelease: false
         env:
