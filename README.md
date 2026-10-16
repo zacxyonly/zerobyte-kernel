@@ -91,6 +91,19 @@ Banyak custom kernel GKI mengalami masalah fatal seperti **Wi-Fi tidak bisa meny
 
 ---
 
+## 📦 2 Varian Resmi yang Dihasilkan
+
+Setiap siklus build secara otomatis menghasilkan **2 varian siap flash** di tab [Releases](https://github.com/zacxyonly/zerobyte-kernel/releases):
+
+1. **Varian Original (`*_Original_*.zip`)**:
+   - Kernel GKI murni tanpa modul root (Clean / Non-KSU).
+   - Direkomendasikan bagi pengguna yang membutuhkan kompatibilitas 100% aman untuk aplikasi perbankan (BCA Mobile, Livin by Mandiri, BRImo, DANA, dll) atau yang ingin menggunakan Magisk / APatch secara terpisah.
+2. **Varian KernelSU (`*_KernelSU_*.zip`)**:
+   - Terintegrasi langsung dengan driver **KernelSU-Next**.
+   - Memberikan akses root di tingkat kernel tanpa memodifikasi partisi init/ramdisk. Pengguna cukup menginstal aplikasi KernelSU Manager setelah flashing.
+
+---
+
 ## 🛠️ Cara Kompilasi Otomatis (GitHub Actions)
 
 Kernel ini dikonfigurasi penuh untuk proses build otomatis di cloud GitHub Actions tanpa perlu mengunduh toolchain puluhan gigabyte ke komputer lokal:
@@ -100,11 +113,9 @@ Kernel ini dikonfigurasi penuh untuk proses build otomatis di cloud GitHub Actio
    **"Build Realme SM6650 (Snapdragon 6 Gen 4) Battery-Friendly Custom Kernel"**.
 3. Klik tombol **Run workflow**:
    * Masukkan nama kernel (default: `ZeroByte-Kernel`).
-   * Centang opsi **KernelSU-Next** (jika ingin root).
    * Centang opsi **Clang ThinLTO** (untuk optimasi efisiensi biner).
 4. Klik tombol hijau **Run workflow**.
-5. Tunggu proses kompilasi selesai (~15–20 menit).
-6. Unduh file flashable `.zip` pada bagian **Artifacts** di halaman hasil build.
+5. Tunggu proses kompilasi selesai. Sistem akan otomatis memublikasikan **kedua varian** (Original & KernelSU) langsung ke tab **Releases** lengkap dengan catatan perubahan dan checksum SHA256!
 
 ---
 

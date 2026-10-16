@@ -7,11 +7,6 @@ on:
         description: 'Nama / Versi Custom Kernel'
         required: true
         default: 'ZeroByte-Kernel'
-      enable_ksu:
-        description: 'Sematkan KernelSU-Next (Root hemat daya)'
-        required: true
-        type: boolean
-        default: true
       enable_lto:
         description: 'Gunakan Clang ThinLTO (Optimasi ukuran & efisiensi)'
         required: true
@@ -67,14 +62,6 @@ jobs:
           git clone -b realme/sm6650_16_b_16.0_p3_5g --depth 1 \
             https://github.com/realme-kernel-opensource/android_kernel_common_realme_sm6650.git kernel_common
 
-      - name: Setup KernelSU-Next (Opsional)
-        if: ${{ github.event_name == 'push' || inputs.enable_ksu == true }}
-        run: |
-          cd kernel_common
-          echo "Memasang KernelSU-Next..."
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s next
-          echo "KernelSU-Next berhasil diterapkan."
-
       - name: Apply "Ringan & Hemat Baterai" Tuning
         run: |
           cd kernel_common
@@ -122,7 +109,10 @@ jobs:
 
           echo "Modifikasi defconfig selesai."
 
-      - name: Compile GKI Kernel Image
+      # =========================================================================
+      # VARIAN 1: ORIGINAL (NON-KSU / VANILLA)
+      # =========================================================================
+      - name: Compile Varian 1 - Original (Non-KSU)
         run: |
           cd kernel_common
           export PATH="$GITHUB_WORKSPACE/clang-aosp/bin:$PATH"
@@ -135,97 +125,161 @@ jobs:
           export CLANG_TRIPLE=aarch64-linux-gnu-
           export CROSS_COMPILE=aarch64-linux-gnu-
 
-          echo "==> Membuat konfigurasi defconfig..."
-          make -j$(nproc --all) O=out gki_defconfig
+          echo "==> [Varian 1 - Original] Menyiapkan defconfig..."
+          make -j$(nproc --all) O=out_original gki_defconfig
 
-          echo "==> Memulai kompilasi Kernel Image..."
-          make -j$(nproc --all) O=out Image
+          echo "==> [Varian 1 - Original] Mengompilasi Kernel Image..."
+          make -j$(nproc --all) O=out_original Image
 
-          if [ ! -f "out/arch/arm64/boot/Image" ]; then
-            echo "ERROR: Kernel Image tidak ditemukan! Kompilasi gagal."
+          if [ ! -f "out_original/arch/arm64/boot/Image" ]; then
+            echo "ERROR: Kernel Image Varian Original tidak ditemukan!"
             exit 1
           fi
-          echo "Kompilasi sukses! Ukuran Image:"
-          ls -lh out/arch/arm64/boot/Image
+          echo "Kompilasi Varian 1 (Original) Berhasil!"
 
-      - name: Package with AnyKernel3
+      - name: Package Varian 1 - Original (AnyKernel3)
         run: |
-          echo "Mengunduh AnyKernel3..."
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel_original
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' anykernel_original/anykernel.sh
+          sed -i 's/block=auto;/block=boot;/g' anykernel_original/anykernel.sh
+          sed -i 's/is_slot_device=0;/is_slot_device=auto;/g' anykernel_original/anykernel.sh
 
-          # Atur AnyKernel3 untuk Generic Kernel Image (GKI)
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' anykernel/anykernel.sh
-          sed -i 's/block=auto;/block=boot;/g' anykernel/anykernel.sh
-          sed -i 's/is_slot_device=0;/is_slot_device=auto;/g' anykernel/anykernel.sh
+          cp kernel_common/out_original/arch/arm64/boot/Image anykernel_original/
 
-          # Salin Image hasil kompilasi
-          cp kernel_common/out/arch/arm64/boot/Image anykernel/
-
-          # Buat arsip flashable zip
-          cd anykernel
-          ZIP_NAME="${KERNEL_NAME}_Realme_SM6650_${BUILD_DATE}.zip"
-          zip -r9 "../${ZIP_NAME}" * -x .git README.md *placeholder
+          cd anykernel_original
+          ZIP_ORIGINAL="${KERNEL_NAME}_Original_SM6650_${BUILD_DATE}.zip"
+          zip -r9 "../${ZIP_ORIGINAL}" * -x .git README.md *placeholder
           cd ..
 
-          echo "ZIP_PATH=${ZIP_NAME}" >> $GITHUB_ENV
-          echo "Flashable ZIP selesai: ${ZIP_NAME}"
+          echo "ZIP_ORIGINAL_NAME=${ZIP_ORIGINAL}" >> $GITHUB_ENV
+          echo "ZIP_ORIGINAL_PATH=${ZIP_ORIGINAL}" >> $GITHUB_ENV
+          echo "Varian 1 dikemas: ${ZIP_ORIGINAL}"
 
-      - name: Upload Kernel Zip Artifact
+      # =========================================================================
+      # VARIAN 2: KERNELSU-NEXT (KSU)
+      # =========================================================================
+      - name: Setup KernelSU-Next & Compile Varian 2
+        run: |
+          cd kernel_common
+          echo "==> Mengintegrasikan KernelSU-Next ke kernel tree..."
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s next
+
+          export PATH="$GITHUB_WORKSPACE/clang-aosp/bin:$PATH"
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CC=clang
+          export LD=ld.lld
+          export LLVM=1
+          export LLVM_IAS=1
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          export CROSS_COMPILE=aarch64-linux-gnu-
+
+          echo "==> [Varian 2 - KernelSU] Menyiapkan defconfig..."
+          make -j$(nproc --all) O=out_ksu gki_defconfig
+
+          echo "==> [Varian 2 - KernelSU] Mengompilasi Kernel Image..."
+          make -j$(nproc --all) O=out_ksu Image
+
+          if [ ! -f "out_ksu/arch/arm64/boot/Image" ]; then
+            echo "ERROR: Kernel Image Varian KernelSU tidak ditemukan!"
+            exit 1
+          fi
+          echo "Kompilasi Varian 2 (KernelSU) Berhasil!"
+
+      - name: Package Varian 2 - KernelSU (AnyKernel3)
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel_ksu
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' anykernel_ksu/anykernel.sh
+          sed -i 's/block=auto;/block=boot;/g' anykernel_ksu/anykernel.sh
+          sed -i 's/is_slot_device=0;/is_slot_device=auto;/g' anykernel_ksu/anykernel.sh
+
+          cp kernel_common/out_ksu/arch/arm64/boot/Image anykernel_ksu/
+
+          cd anykernel_ksu
+          ZIP_KSU="${KERNEL_NAME}_KernelSU_SM6650_${BUILD_DATE}.zip"
+          zip -r9 "../${ZIP_KSU}" * -x .git README.md *placeholder
+          cd ..
+
+          echo "ZIP_KSU_NAME=${ZIP_KSU}" >> $GITHUB_ENV
+          echo "ZIP_KSU_PATH=${ZIP_KSU}" >> $GITHUB_ENV
+          echo "Varian 2 dikemas: ${ZIP_KSU}"
+
+      # =========================================================================
+      # ARTIFACTS & DUAL-VARIANT AUTO RELEASE
+      # =========================================================================
+      - name: Upload Both Kernel Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ZIP_NAME }}
-          path: ${{ env.ZIP_PATH }}
+          name: ${{ env.KERNEL_NAME }}-SM6650-${{ env.BUILD_DATE }}
+          path: |
+            ${{ env.ZIP_ORIGINAL_PATH }}
+            ${{ env.ZIP_KSU_PATH }}
           retention-days: 14
 
-      - name: Generate Checksum & Release Notes
+      - name: Generate Checksums & Release Notes
         run: |
-          ZIP_SHA256=$(sha256sum "${ZIP_PATH}" | awk '{print $1}')
-          echo "ZIP_SHA256=${ZIP_SHA256}" >> $GITHUB_ENV
+          SHA_ORIGINAL=$(sha256sum "${ZIP_ORIGINAL_PATH}" | awk '{print $1}')
+          SHA_KSU=$(sha256sum "${ZIP_KSU_PATH}" | awk '{print $1}')
+
           echo "RELEASE_TAG=v1.0.0-${BUILD_DATE}" >> $GITHUB_ENV
 
-          cat << 'EOF' > release_notes.md
-          ## ⚡ ZeroByte Kernel - Release Build
+          cat << EOF > release_notes.md
+          ## ⚡ ZeroByte Kernel - Release Build (${BUILD_DATE})
           *High-Efficiency, Lightweight & Battery-Oriented Custom Kernel for Snapdragon 6 Gen 4 (SM6650)*
 
+          Rilis ini menyediakan **2 varian resmi** yang dapat dipilih sesuai kebutuhan:
+
           ---
 
-          ### 📋 Catatan Perubahan & Fitur (Changelog):
+          ### 📦 Pilihan Varian Kernel:
+          1. **Varian Original (\`${ZIP_ORIGINAL_NAME}\`)**:
+             - Kernel murni tanpa modul root (Clean / Non-KSU).
+             - Direkomendasikan bagi pengguna yang membutuhkan kompatibilitas 100% aman untuk aplikasi perbankan (BCA, Mandiri, BRI, Livin, dll) atau yang ingin menggunakan Magisk / APatch secara terpisah.
+          2. **Varian KernelSU (\`${ZIP_KSU_NAME}\`)**:
+             - Terintegrasi langsung dengan **KernelSU-Next**.
+             - Memberikan akses root di tingkat kernel tanpa memodifikasi partisi init/ramdisk. Cukup instal aplikasi KernelSU Manager setelah flashing.
+
+          ---
+
+          ### 📋 Rangkuman Optimasi Bersama:
           - 🚀 **ZRAM Compression**: Default diatur ke **LZ4** untuk *zero-overhead* CPU, kecepatan dekompresi instan, dan suhu tetap dingin saat multitasking intensif.
-          - 🛡️ **KMI / GKI 2.0 ABI Protection**: Mempertahankan struktur biner kernel (KMI) 100% identik dengan standar GKI resmi agar modul hardware OEM (**Wi-Fi** `qca_cld3_wlan.ko` dan **Audio** `snd-soc-*.ko`) berfungsi normal tanpa kendala symbol mismatch.
-          - 🧹 **Overhead Debugging Stripped**: Menghapus beban logging dan modul debug berat (`SLUB_DEBUG`, `DEBUG_INFO_BTF`, `DYNAMIC_DEBUG_CORE`, `PM_DEBUG`, `DEBUG_MEMORY_INIT`).
-          - 🔋 **Power Management**: Deep sleep optimal via `CONFIG_NO_HZ_IDLE=y` dan `schedutil` governor.
-          - ⚡ **Compiler Optimization**: Dikompilasi menggunakan AOSP Clang Reference Toolchain (`r487747c`) dengan ThinLTO untuk eksekusi kode yang padat dan efisien.
+          - 🛡️ **KMI / GKI 2.0 ABI Protection**: Mempertahankan struktur biner kernel (KMI) 100% identik dengan standar GKI resmi agar modul hardware OEM (**Wi-Fi** \`qca_cld3_wlan.ko\` dan **Audio** \`snd-soc-*.ko\`) berfungsi normal tanpa kendala symbol mismatch.
+          - 🧹 **Overhead Debugging Stripped**: Menghapus beban logging dan modul debug berat (\`SLUB_DEBUG\`, \`DEBUG_INFO_BTF\`, \`DYNAMIC_DEBUG_CORE\`, \`PM_DEBUG\`, \`DEBUG_MEMORY_INIT\`).
+          - 🔋 **Power Management**: Deep sleep optimal via \`CONFIG_NO_HZ_IDLE=y\` dan \`schedutil\` governor.
+          - ⚡ **Compiler Optimization**: Dikompilasi menggunakan AOSP Clang Reference Toolchain (\`r487747c\`) dengan ThinLTO untuk eksekusi kode yang padat dan efisien.
           - 🌐 **Network Latency**: Mengaktifkan TCP BBR congestion control untuk transmisi data yang hemat daya dan stabil.
-          - 🔑 **Root Ready**: Terintegrasi KernelSU-Next bawaan.
 
           ---
 
-          ### 📱 Informasi Paket & Checksum:
+          ### 📱 Informasi Paket & Checksums (SHA256):
           - **Target Device**: Realme P3 5G / Realme 14 Series (RMX5070)
           - **Chipset**: Qualcomm Snapdragon 6 Gen 4 (SM6650)
           - **Kernel Version**: Linux 6.1.y GKI 2.0 (Android 14 / 15)
           - **Installer**: AnyKernel3 Flashable ZIP
-          - **File**: `${ZIP_NAME}`
-          - **SHA256**: `${ZIP_SHA256}`
+
+          | File Varian | SHA256 Checksum |
+          | :--- | :--- |
+          | \`${ZIP_ORIGINAL_NAME}\` | \`${SHA_ORIGINAL}\` |
+          | \`${ZIP_KSU_NAME}\` | \`${SHA_KSU}\` |
 
           ---
 
           ### 📥 Panduan Pemasangan:
-          1. Masuk ke Custom Recovery (TWRP / OrangeFox) atau buka KernelSU Manager.
-          2. Flash file zip ini ke partisi `boot`.
-          3. Reboot System (Wipe cache/dalvik bersifat opsional).
+          1. Unduh varian yang Anda inginkan (Original atau KernelSU).
+          2. Masuk ke Custom Recovery (TWRP / OrangeFox) atau buka KernelSU Manager.
+          3. Flash file zip yang dipilih ke partisi \`boot\`.
+          4. Reboot System (Wipe cache/dalvik bersifat opsional).
           EOF
 
-          sed -i "s/\${ZIP_NAME}/${ZIP_NAME}/g" release_notes.md
-          sed -i "s/\${ZIP_SHA256}/${ZIP_SHA256}/g" release_notes.md
-
-      - name: Publish Auto GitHub Release
+      - name: Publish Dual-Variant GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.KERNEL_NAME }} - ${{ env.BUILD_DATE }}
           body_path: release_notes.md
-          files: ${{ env.ZIP_PATH }}
+          files: |
+            ${{ env.ZIP_ORIGINAL_PATH }}
+            ${{ env.ZIP_KSU_PATH }}
           draft: false
           prerelease: false
         env:
