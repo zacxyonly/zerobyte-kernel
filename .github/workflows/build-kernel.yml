@@ -58,15 +58,19 @@ jobs:
           echo "Verifikasi Clang:"
           "$GITHUB_WORKSPACE/clang-aosp/bin/clang" --version
 
-      - name: Clone Realme SM6650 Common Kernel
+      - name: Clone Realme SM6650 Source Tree (Modules & Common Kernel)
         run: |
-          echo "Cloning android_kernel_common_realme_sm6650 (Branch: realme/sm6650_16_b_16.0_p3_5g)..."
+          echo "Cloning android_kernel_modules_and_devicetree_realme_sm6650 (Vendor tree)..."
           git clone -b realme/sm6650_16_b_16.0_p3_5g --depth 1 \
-            https://github.com/realme-kernel-opensource/android_kernel_common_realme_sm6650.git kernel_common
+            https://github.com/realme-kernel-opensource/android_kernel_modules_and_devicetree_realme_sm6650.git workspace_root
+
+          echo "Cloning android_kernel_common_realme_sm6650 into kernel_platform/common..."
+          git clone -b realme/sm6650_16_b_16.0_p3_5g --depth 1 \
+            https://github.com/realme-kernel-opensource/android_kernel_common_realme_sm6650.git workspace_root/kernel_platform/common
 
       - name: Apply "Ringan & Hemat Baterai" Tuning
         run: |
-          cd kernel_common
+          cd workspace_root/kernel_platform/common
           DEFCONFIG="arch/arm64/configs/gki_defconfig"
 
           echo "==> Menerapkan modifikasi konfigurasi hemat daya pada $DEFCONFIG..."
@@ -116,7 +120,7 @@ jobs:
       # =========================================================================
       - name: Compile Varian 1 - Original (Non-KSU)
         run: |
-          cd kernel_common
+          cd workspace_root/kernel_platform/common
           export PATH="$GITHUB_WORKSPACE/clang-aosp/bin:$PATH"
           export ARCH=arm64
           export SUBARCH=arm64
@@ -146,7 +150,7 @@ jobs:
           sed -i 's/block=auto;/block=boot;/g' anykernel_original/anykernel.sh
           sed -i 's/is_slot_device=0;/is_slot_device=auto;/g' anykernel_original/anykernel.sh
 
-          cp kernel_common/out_original/arch/arm64/boot/Image anykernel_original/
+          cp workspace_root/kernel_platform/common/out_original/arch/arm64/boot/Image anykernel_original/
 
           cd anykernel_original
           ZIP_ORIGINAL="${KERNEL_NAME}_Original_SM6650_${BUILD_DATE}.zip"
@@ -162,7 +166,7 @@ jobs:
       # =========================================================================
       - name: Setup KernelSU-Next & Compile Varian 2
         run: |
-          cd kernel_common
+          cd workspace_root/kernel_platform/common
           echo "==> Mengintegrasikan KernelSU-Next ke kernel tree..."
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s next
 
@@ -195,7 +199,7 @@ jobs:
           sed -i 's/block=auto;/block=boot;/g' anykernel_ksu/anykernel.sh
           sed -i 's/is_slot_device=0;/is_slot_device=auto;/g' anykernel_ksu/anykernel.sh
 
-          cp kernel_common/out_ksu/arch/arm64/boot/Image anykernel_ksu/
+          cp workspace_root/kernel_platform/common/out_ksu/arch/arm64/boot/Image anykernel_ksu/
 
           cd anykernel_ksu
           ZIP_KSU="${KERNEL_NAME}_KernelSU_SM6650_${BUILD_DATE}.zip"
