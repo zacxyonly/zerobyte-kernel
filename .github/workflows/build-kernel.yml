@@ -17,6 +17,9 @@ on:
         required: true
         type: boolean
         default: true
+  push:
+    branches:
+      - main
 
 jobs:
   build-kernel:
@@ -63,7 +66,7 @@ jobs:
             https://github.com/realme-kernel-opensource/android_kernel_common_realme_sm6650.git kernel_common
 
       - name: Setup KernelSU-Next (Opsional)
-        if: ${{ inputs.enable_ksu == true }}
+        if: ${{ github.event_name == 'push' || inputs.enable_ksu == true }}
         run: |
           cd kernel_common
           echo "Memasang KernelSU-Next..."
@@ -107,7 +110,7 @@ jobs:
           scripts/config --file $DEFCONFIG --set-str DEFAULT_TCP_CONG "bbr"
 
           # 5. ThinLTO (Link-Time Optimization)
-          if [ "${{ inputs.enable_lto }}" = "true" ]; then
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ inputs.enable_lto }}" = "true" ]; then
             scripts/config --file $DEFCONFIG --enable LTO_CLANG_THIN
             scripts/config --file $DEFCONFIG --disable LTO_NONE
           fi
