@@ -1,4 +1,4 @@
-name: Build Realme SM6650 (Snapdragon 6 Gen 4) Battery-Friendly Custom Kernel
+name: Build ZeroByte Kernel for Realme P3 5G (RMX5079 / dongfeng)
 
 on:
   workflow_dispatch:
@@ -12,9 +12,6 @@ on:
         required: true
         type: boolean
         default: true
-  push:
-    branches:
-      - main
 
 jobs:
   build-kernel:
@@ -105,7 +102,7 @@ jobs:
           scripts/config --file $DEFCONFIG --set-str DEFAULT_TCP_CONG "bbr"
 
           # 5. ThinLTO (Link-Time Optimization)
-          if [ "${{ github.event_name }}" = "push" ] || [ "${{ inputs.enable_lto }}" = "true" ]; then
+          if [ "${{ inputs.enable_lto }}" != "false" ]; then
             scripts/config --file $DEFCONFIG --enable LTO_CLANG_THIN
             scripts/config --file $DEFCONFIG --disable LTO_NONE
           fi
@@ -147,6 +144,8 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel_original
           sed -i 's/do.devicecheck=1/do.devicecheck=0/g' anykernel_original/anykernel.sh
+          sed -i 's/device.name1=.*/device.name1=dongfeng/g' anykernel_original/anykernel.sh
+          sed -i 's/device.name2=.*/device.name2=RMX5079/g' anykernel_original/anykernel.sh
           sed -i 's/block=auto;/block=boot;/g' anykernel_original/anykernel.sh
           sed -i 's/is_slot_device=0;/is_slot_device=auto;/g' anykernel_original/anykernel.sh
 
@@ -196,6 +195,8 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel_ksu
           sed -i 's/do.devicecheck=1/do.devicecheck=0/g' anykernel_ksu/anykernel.sh
+          sed -i 's/device.name1=.*/device.name1=dongfeng/g' anykernel_ksu/anykernel.sh
+          sed -i 's/device.name2=.*/device.name2=RMX5079/g' anykernel_ksu/anykernel.sh
           sed -i 's/block=auto;/block=boot;/g' anykernel_ksu/anykernel.sh
           sed -i 's/is_slot_device=0;/is_slot_device=auto;/g' anykernel_ksu/anykernel.sh
 
@@ -258,7 +259,7 @@ jobs:
           ---
 
           ### 📱 Informasi Paket & Checksums (SHA256):
-          - **Target Device**: Realme P3 5G / Realme 14 Series (RMX5070)
+          - **Target Device**: Realme P3 5G (RMX5079 / dongfeng)
           - **Chipset**: Qualcomm Snapdragon 6 Gen 4 (SM6650)
           - **Kernel Version**: Linux 6.1.y GKI 2.0 (Android 14 / 15)
           - **Installer**: AnyKernel3 Flashable ZIP
