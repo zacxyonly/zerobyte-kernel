@@ -21,7 +21,7 @@ High-efficiency, lightweight, and battery-oriented custom GKI 2.0 kernel specifi
 | **Kernel Version** | Linux 6.1.y GKI 2.0 (`android14-6.1`) |
 | **Toolchain** | Google AOSP Clang `r487747c` + ThinLTO |
 | **Target OS** | Realme UI 5.0 / 6.0 (Android 14 / 15) & AOSP Custom ROMs |
-| **Format** | AnyKernel3 Flashable ZIP |
+| **Format** | AnyKernel3 Flashable ZIP (Custom ASCII Banner) |
 
 ---
 
@@ -33,12 +33,13 @@ High-efficiency, lightweight, and battery-oriented custom GKI 2.0 kernel specifi
 - **Debloated Tracing**: Stripped heavy debugging routines (`SLUB_DEBUG`, `DEBUG_INFO_BTF`, `DYNAMIC_DEBUG_CORE`, `PM_DEBUG`) to minimize RAM footprint.
 - **Network Performance**: TCP BBR congestion control enabled by default for lower packet latency and stable throughput.
 - **ThinLTO**: Link-Time Optimization enabled for optimized binary size and cache utilization.
+- **Modular Configuration**: Battery and performance tweaks codified cleanly in [`configs/zerobyte_battery.config`](configs/zerobyte_battery.config).
 
 ---
 
 ## 📦 Kernel Variants
 
-Every build automatically generates two flashable variants available under [**Releases**](https://github.com/zacxyonly/zerobyte-kernel/releases):
+Every build automatically generates flashable ZIP packages available under [**Releases**](https://github.com/zacxyonly/zerobyte-kernel/releases):
 
 | Variant | Purpose | Root Compatibility |
 |:---|:---|:---|
@@ -56,19 +57,42 @@ Every build automatically generates two flashable variants available under [**Re
 1. Download your preferred kernel variant (`Original` or `KernelSU`) from [Releases](https://github.com/zacxyonly/zerobyte-kernel/releases).
 2. Boot into recovery (**TWRP** / **OrangeFox**).
 3. Select **Install** and choose the downloaded `.zip` file.
-4. Swipe to confirm flash.
+4. Swipe to confirm flash (AnyKernel3 will display the ZeroByte ASCII banner).
 5. Reboot System (*Wipe cache/dalvik is optional*).
 
 *Alternatively, you can flash the `.zip` directly using KernelSU Manager or Franco Kernel Manager.*
 
 ---
 
+## 💻 Local Compilation (`build.sh`)
+
+You can compile ZeroByte Kernel locally on Linux / WSL with a single command:
+
+```bash
+# Clone the repository
+git clone https://github.com/zacxyonly/zerobyte-kernel.git
+cd zerobyte-kernel
+
+# Build KernelSU-Next variant (automatically handles toolchain & kernel tree):
+./build.sh --variant ksu
+
+# Build Original (clean / non-root) variant:
+./build.sh --variant original
+
+# Build both variants:
+./build.sh --variant all
+```
+
+Compiled flashable `.zip` packages and SHA256 checksums will be generated in `out/`.
+
+---
+
 ## 🛠️ Automated CI/CD Build
 
-Builds are powered by GitHub Actions:
+Builds are also fully automated via GitHub Actions:
 1. Navigate to [**Actions**](https://github.com/zacxyonly/zerobyte-kernel/actions).
 2. Select **Build ZeroByte Kernel for Realme P3 5G (RMX5079 / dongfeng)**.
-3. Click **Run workflow** (ThinLTO enabled by default).
+3. Click **Run workflow** (select variant and ThinLTO option).
 4. Flashable ZIP packages and SHA256 checksums will be published to [Releases](https://github.com/zacxyonly/zerobyte-kernel/releases).
 
 ---

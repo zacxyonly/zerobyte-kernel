@@ -3,12 +3,21 @@ name: Build ZeroByte Kernel for Realme P3 5G (RMX5079 / dongfeng)
 on:
   workflow_dispatch:
     inputs:
+      variant:
+        description: 'Varian Kernel yang akan dikompilasi'
+        required: true
+        type: choice
+        options:
+          - all
+          - original
+          - ksu
+        default: 'all'
       kernel_name:
-        description: 'Nama / Versi Custom Kernel'
+        description: 'Nama / Tag Custom Kernel'
         required: true
         default: 'ZeroByte-Kernel'
       enable_lto:
-        description: 'Gunakan Clang ThinLTO (Optimasi ukuran & efisiensi)'
+        description: 'Gunakan Clang ThinLTO (Optimasi ukuran & efisiensi biner)'
         required: true
         type: boolean
         default: true
@@ -37,6 +46,8 @@ jobs:
         run: |
           echo "BUILD_DATE=$(date +'%Y%m%d_%H%M%S')" >> $GITHUB_ENV
           echo "KERNEL_NAME=${{ github.event.inputs.kernel_name || 'ZeroByte-Kernel' }}" >> $GITHUB_ENV
+          echo "BUILD_VARIANT=${{ github.event.inputs.variant || 'all' }}" >> $GITHUB_ENV
+          echo "ENABLE_LTO=${{ github.event.inputs.enable_lto != 'false' }}" >> $GITHUB_ENV
 
       - name: Install Build Dependencies
         run: |
@@ -65,68 +76,28 @@ jobs:
           git clone -b realme/sm6650_16_b_16.0_p3_5g --depth 1 \
             https://github.com/realme-kernel-opensource/android_kernel_common_realme_sm6650.git workspace_root/kernel_platform/common
 
-      - name: Apply "Ringan & Hemat Baterai" Tuning
+      - name: Setup Compiler Environment
         run: |
-          cd workspace_root/kernel_platform/common
-          DEFCONFIG="arch/arm64/configs/gki_defconfig"
-
-          echo "==> Menerapkan modifikasi konfigurasi hemat daya pada $DEFCONFIG..."
-
-          # 1. Matikan Debugging Bloat & Tracing yang memboroskan RAM & CPU
-          # Catatan KMI: Simbol struct (seperti SCHEDSTATS) tetap dipertahankan agar layout struct
-          # task_struct tidak berubah, mencegah symbol CRC mismatch pada modul Wi-Fi/Audio bawaan OEM.
-          scripts/config --file $DEFCONFIG --disable DEBUG_INFO_DWARF4
-          scripts/config --file $DEFCONFIG --disable DEBUG_INFO_BTF
-          scripts/config --file $DEFCONFIG --disable PM_DEBUG
-          scripts/config --file $DEFCONFIG --disable PM_ADVANCED_DEBUG
-          scripts/config --file $DEFCONFIG --disable DYNAMIC_DEBUG_CORE
-          scripts/config --file $DEFCONFIG --disable KUNIT_DEBUGFS
-          scripts/config --file $DEFCONFIG --disable DEBUG_MEMORY_INIT
-          scripts/config --file $DEFCONFIG --disable SLUB_DEBUG
-          scripts/config --file $DEFCONFIG --disable CMA_DEBUGFS
-          scripts/config --file $DEFCONFIG --disable ANDROID_DEBUG_SYMBOLS
-          scripts/config --file $DEFCONFIG --disable ANDROID_DEBUG_KINFO
-
-          # 2. Power Management & Deep Sleep
-          scripts/config --file $DEFCONFIG --enable NO_HZ_IDLE
-          scripts/config --file $DEFCONFIG --enable CPU_IDLE_GOV_MENU
-          scripts/config --file $DEFCONFIG --enable CPU_FREQ_GOV_SCHEDUTIL
-
-          # 3. Memory & ZRAM Optimization (Default LZ4: Zero-Overhead, Suhu Lebih Dingin & Hemat Baterai)
-          scripts/config --file $DEFCONFIG --enable CRYPTO_LZ4
-          scripts/config --file $DEFCONFIG --enable CRYPTO_ZSTD
-          scripts/config --file $DEFCONFIG --set-str ZRAM_DEF_COMP "lz4"
-
-          # 4. Jaringan Cepat & Rendah Latensi (TCP BBR)
-          scripts/config --file $DEFCONFIG --enable TCP_CONG_BBR
-          scripts/config --file $DEFCONFIG --set-str DEFAULT_TCP_CONG "bbr"
-
-          # 5. ThinLTO (Link-Time Optimization)
-          if [ "${{ inputs.enable_lto }}" != "false" ]; then
-            scripts/config --file $DEFCONFIG --enable LTO_CLANG_THIN
-            scripts/config --file $DEFCONFIG --disable LTO_NONE
-          fi
-
-          # 6. Ganti Local Version name
-          scripts/config --file $DEFCONFIG --set-str LOCALVERSION "-${KERNEL_NAME}"
-
-          echo "Modifikasi defconfig selesai."
+          echo "ARCH=arm64" >> $GITHUB_ENV
+          echo "SUBARCH=arm64" >> $GITHUB_ENV
+          echo "CC=clang" >> $GITHUB_ENV
+          echo "LD=ld.lld" >> $GITHUB_ENV
+          echo "LLVM=1" >> $GITHUB_ENV
+          echo "LLVM_IAS=1" >> $GITHUB_ENV
+          echo "CLANG_TRIPLE=aarch64-linux-gnu-" >> $GITHUB_ENV
+          echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
 
       # =========================================================================
       # VARIAN 1: ORIGINAL (NON-KSU / VANILLA)
       # =========================================================================
       - name: Compile Varian 1 - Original (Non-KSU)
+        if: ${{ env.BUILD_VARIANT == 'all' || env.BUILD_VARIANT == 'original' }}
         run: |
           cd workspace_root/kernel_platform/common
-          export PATH="$GITHUB_WORKSPACE/clang-aosp/bin:$PATH"
-          export ARCH=arm64
-          export SUBARCH=arm64
-          export CC=clang
-          export LD=ld.lld
-          export LLVM=1
-          export LLVM_IAS=1
-          export CLANG_TRIPLE=aarch64-linux-gnu-
-          export CROSS_COMPILE=aarch64-linux-gnu-
+          git checkout -f arch/arm64/configs/gki_defconfig >/dev/null 2>&1 || true
+
+          # Apply modular configuration fragment
+          "$GITHUB_WORKSPACE/configs/apply_config.sh" . "arch/arm64/configs/gki_defconfig" "${{ env.ENABLE_LTO }}" "${{ env.KERNEL_NAME }}"
 
           echo "==> [Varian 1 - Original] Menyiapkan defconfig..."
           make -j$(nproc --all) O=out_original gki_defconfig
@@ -141,20 +112,17 @@ jobs:
           echo "Kompilasi Varian 1 (Original) Berhasil!"
 
       - name: Package Varian 1 - Original (AnyKernel3)
+        if: ${{ env.BUILD_VARIANT == 'all' || env.BUILD_VARIANT == 'original' }}
         run: |
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel_original
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' anykernel_original/anykernel.sh
-          sed -i 's/device.name1=.*/device.name1=dongfeng/g' anykernel_original/anykernel.sh
-          sed -i 's/device.name2=.*/device.name2=RMX5079/g' anykernel_original/anykernel.sh
-          sed -i 's/block=auto;/block=boot;/g' anykernel_original/anykernel.sh
-          sed -i 's/is_slot_device=0;/is_slot_device=auto;/g' anykernel_original/anykernel.sh
-
+          mkdir -p anykernel_original
+          cp -r anykernel/* anykernel_original/
           cp workspace_root/kernel_platform/common/out_original/arch/arm64/boot/Image anykernel_original/
 
           cd anykernel_original
           ZIP_ORIGINAL="${KERNEL_NAME}_Original_SM6650_${BUILD_DATE}.zip"
           zip -r9 "../${ZIP_ORIGINAL}" * -x .git README.md *placeholder
           cd ..
+          rm -rf anykernel_original
 
           echo "ZIP_ORIGINAL_NAME=${ZIP_ORIGINAL}" >> $GITHUB_ENV
           echo "ZIP_ORIGINAL_PATH=${ZIP_ORIGINAL}" >> $GITHUB_ENV
@@ -164,20 +132,16 @@ jobs:
       # VARIAN 2: KERNELSU-NEXT (KSU)
       # =========================================================================
       - name: Setup KernelSU-Next & Compile Varian 2
+        if: ${{ env.BUILD_VARIANT == 'all' || env.BUILD_VARIANT == 'ksu' }}
         run: |
           cd workspace_root/kernel_platform/common
+          git checkout -f arch/arm64/configs/gki_defconfig >/dev/null 2>&1 || true
+
           echo "==> Mengintegrasikan KernelSU-Next ke kernel tree..."
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s next
 
-          export PATH="$GITHUB_WORKSPACE/clang-aosp/bin:$PATH"
-          export ARCH=arm64
-          export SUBARCH=arm64
-          export CC=clang
-          export LD=ld.lld
-          export LLVM=1
-          export LLVM_IAS=1
-          export CLANG_TRIPLE=aarch64-linux-gnu-
-          export CROSS_COMPILE=aarch64-linux-gnu-
+          # Apply modular configuration fragment
+          "$GITHUB_WORKSPACE/configs/apply_config.sh" . "arch/arm64/configs/gki_defconfig" "${{ env.ENABLE_LTO }}" "${{ env.KERNEL_NAME }}"
 
           echo "==> [Varian 2 - KernelSU] Menyiapkan defconfig..."
           make -j$(nproc --all) O=out_ksu gki_defconfig
@@ -192,48 +156,40 @@ jobs:
           echo "Kompilasi Varian 2 (KernelSU) Berhasil!"
 
       - name: Package Varian 2 - KernelSU (AnyKernel3)
+        if: ${{ env.BUILD_VARIANT == 'all' || env.BUILD_VARIANT == 'ksu' }}
         run: |
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel_ksu
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' anykernel_ksu/anykernel.sh
-          sed -i 's/device.name1=.*/device.name1=dongfeng/g' anykernel_ksu/anykernel.sh
-          sed -i 's/device.name2=.*/device.name2=RMX5079/g' anykernel_ksu/anykernel.sh
-          sed -i 's/block=auto;/block=boot;/g' anykernel_ksu/anykernel.sh
-          sed -i 's/is_slot_device=0;/is_slot_device=auto;/g' anykernel_ksu/anykernel.sh
-
+          mkdir -p anykernel_ksu
+          cp -r anykernel/* anykernel_ksu/
           cp workspace_root/kernel_platform/common/out_ksu/arch/arm64/boot/Image anykernel_ksu/
 
           cd anykernel_ksu
           ZIP_KSU="${KERNEL_NAME}_KernelSU_SM6650_${BUILD_DATE}.zip"
           zip -r9 "../${ZIP_KSU}" * -x .git README.md *placeholder
           cd ..
+          rm -rf anykernel_ksu
 
           echo "ZIP_KSU_NAME=${ZIP_KSU}" >> $GITHUB_ENV
           echo "ZIP_KSU_PATH=${ZIP_KSU}" >> $GITHUB_ENV
           echo "Varian 2 dikemas: ${ZIP_KSU}"
 
       # =========================================================================
-      # ARTIFACTS & DUAL-VARIANT AUTO RELEASE
+      # ARTIFACTS & RELEASE
       # =========================================================================
-      - name: Upload Both Kernel Artifacts
+      - name: Upload Kernel Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.KERNEL_NAME }}-SM6650-${{ env.BUILD_DATE }}
-          path: |
-            ${{ env.ZIP_ORIGINAL_PATH }}
-            ${{ env.ZIP_KSU_PATH }}
+          path: "*.zip"
           retention-days: 14
 
       - name: Generate Checksums & Release Notes
         run: |
-          SHA_ORIGINAL=$(sha256sum "${ZIP_ORIGINAL_PATH}" | awk '{print $1}')
-          SHA_KSU=$(sha256sum "${ZIP_KSU_PATH}" | awk '{print $1}')
-
           echo "RELEASE_TAG=v1.0.0-${BUILD_DATE}" >> $GITHUB_ENV
 
-          cat << EOF > release_notes.md
+          cat << 'EOF' > release_notes.md
           # ZeroByte Kernel for Realme P3 5G (dongfeng)
 
-          High-efficiency, lightweight, and battery-oriented custom GKI 2.0 kernel for **Realme P3 5G (\`RMX5079\` / \`dongfeng\` / \`SM6650\`)**.
+          High-efficiency, lightweight, and battery-oriented custom GKI 2.0 kernel for **Realme P3 5G (`RMX5079` / `dongfeng` / `SM6650`)**.
 
           ---
 
@@ -241,47 +197,61 @@ jobs:
 
           | Variant | File | Root Support | Details |
           |:---|:---|:---|:---|
-          | **Original** | \`${ZIP_ORIGINAL_NAME}\` | None / Standalone | Clean GKI kernel, banking & Play Integrity ready. |
-          | **KernelSU** | \`${ZIP_KSU_NAME}\` | KernelSU-Next | Integrated kernel-level root driver. |
+          EOF
+
+          if [ -n "${ZIP_ORIGINAL_NAME:-}" ]; then
+            echo "| **Original** | \`${ZIP_ORIGINAL_NAME}\` | None / Standalone | Clean GKI kernel, banking & Play Integrity ready. |" >> release_notes.md
+          fi
+          if [ -n "${ZIP_KSU_NAME:-}" ]; then
+            echo "| **KernelSU** | \`${ZIP_KSU_NAME}\` | KernelSU-Next | Integrated kernel-level root driver. |" >> release_notes.md
+          fi
+
+          cat << 'EOF' >> release_notes.md
 
           ---
 
           ### ⚡ Highlights
-          - **Power & Sleep**: Tickless idle (\`CONFIG_NO_HZ_IDLE=y\`) and tuned \`schedutil\` governor.
+          - **Power & Sleep**: Tickless idle (`CONFIG_NO_HZ_IDLE=y`) and tuned `schedutil` governor.
           - **Memory**: Default **LZ4** ZRAM compression for zero-overhead RAM swap.
           - **KMI Compliance**: 100% GKI 2.0 ABI safe (OEM Wi-Fi & Audio modules load cleanly).
-          - **Debloated**: Disabled heavy debug routines (\`SLUB_DEBUG\`, \`DEBUG_INFO_BTF\`, \`DYNAMIC_DEBUG_CORE\`).
+          - **Debloated**: Disabled heavy debug routines (`SLUB_DEBUG`, `DEBUG_INFO_BTF`, `DYNAMIC_DEBUG_CORE`).
           - **Networking**: TCP BBR congestion control enabled by default.
-          - **Compiler**: AOSP Clang \`r487747c\` + ThinLTO.
+          - **Compiler**: AOSP Clang `r487747c` + ThinLTO.
 
           ---
 
           ### 📱 Verification (SHA256)
           | File | SHA256 Checksum |
           |:---|:---|
-          | \`${ZIP_ORIGINAL_NAME}\` | \`${SHA_ORIGINAL}\` |
-          | \`${ZIP_KSU_NAME}\` | \`${SHA_KSU}\` |
+          EOF
+
+          for zip_file in *.zip; do
+            if [ -f "$zip_file" ]; then
+              sha=$(sha256sum "$zip_file" | awk '{print $1}')
+              echo "| \`$zip_file\` | \`$sha\` |" >> release_notes.md
+            fi
+          done
+
+          cat << 'EOF' >> release_notes.md
 
           ---
 
           ### 🚀 Installation
           1. Boot into custom recovery (TWRP / OrangeFox).
-          2. Flash your chosen variant \`.zip\`.
+          2. Flash your chosen variant `.zip`.
           3. Reboot system.
 
           > [!IMPORTANT]
-          > Always backup your stock \`boot\` partition in recovery before flashing.
+          > Always backup your stock `boot` partition in recovery before flashing.
           EOF
 
-      - name: Publish Dual-Variant GitHub Release
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.KERNEL_NAME }} - ${{ env.BUILD_DATE }}
           body_path: release_notes.md
-          files: |
-            ${{ env.ZIP_ORIGINAL_PATH }}
-            ${{ env.ZIP_KSU_PATH }}
+          files: "*.zip"
           draft: false
           prerelease: false
         env:
